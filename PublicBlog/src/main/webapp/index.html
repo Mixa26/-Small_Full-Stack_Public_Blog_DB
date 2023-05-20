@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Public Blog</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css"
+          integrity="sha384-B0vP5xmATw1+K9KRQjQERJvTumQW0nPEzvF6L/Z6nronJ3oUOFUFpCjEUQouq2+l" crossorigin="anonymous">
+    <style>
+        .truncate {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            max-width: 20rem;
+        }
+    </style>
+</head>
+<body onload="login()">
+
+    <!--The login page-->
+    <div class="container" id="loginScreen">
+        <div class="row">
+            <div class="col-lg-6">
+                <h1>User login</h1>
+                <form method="post" action="/api/users/login">
+                    <div class="form-group">
+                        <label for="loginUsername">Username</label>
+                        <input type="text" class="form-control" id="loginUsername" aria-describedby="nameHelp" placeholder="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="text" class="form-control" id="loginPassword" aria-describedby="nameHelp" placeholder="password">
+                    </div>
+                    <button id="loginButton" class="btn btn-primary">Login</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!--The main screen which shows all the blogs-->
+    <div class="container" id="allPostsScreen">
+        <h3>All blogs</h3>
+        <br>
+        <div id="blogs">
+        <!--This is where the blogs will go-->
+        </div>
+        <br>
+        <hr>
+        <button id="newPostButton" class="btn btn-primary">New Post</button>
+    </div>
+
+    <!--The screen for adding a blog post-->
+    <div class="container" id="addPostScreen">
+        <form method='POST' id="addPostForm">
+            <div class="form-group">
+                <label for="title">Title</label>
+                <input class="form-control" id="title">
+            </div>
+            <div class="form-group">
+                <label for="content">Content</label>
+                <input class="form-control input-lg" id="content" type="text">
+            </div>
+            <button type="submit" id="savePostButton" class="btn btn-primary">Save Post</button>
+        </form>
+    </div>
+
+    <!--The screen for detailed view of the blog post-->
+    <div class="container" id="detailedPostScreen">
+        <h1 id="detailedPostTitle"></h1>
+        <h5 id="detailedPostDate"></h5>
+        <h5 id="detailedPostAuthor"></h5>
+        <p id="detailedPostText"></p>
+        <hr>
+        <!--This is where the comments will be added-->
+        <h3>All comments</h3>
+        <div id="detailedPostComments">
+        </div>
+        <hr>
+        <h3>Make a new comment</h3>
+        <form method='POST' id="addCommentToPost">
+            <div class="form-group">
+                <label for="comment">Comment</label>
+                <input class="form-control" id="comment">
+            </div>
+            <button type="submit" id="addCommentToPostButton" class="btn btn-primary">Comment</button>
+        </form>
+        <br>
+        <button id="backToAllPostsButton" class="btn btn-primary">Back to blogs</button>
+    </div>
+
+<script>
+    let selectedBlogId = 0;
+    function login(){
+        document.getElementById("allPostsScreen").style.display = "none";
+        document.getElementById("addPostScreen").style.display = "none";
+        document.getElementById("detailedPostScreen").style.display = "none";
+
+        document.getElementById('loginButton').addEventListener('click', e => {
+            e.preventDefault();
+
+            const data = {
+                username: document.getElementById('loginUsername').value,
+                password: document.getElementById('loginPassword').value
+            }
+
+            fetch("/api/users/login",{
+                method: 'post',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            }).then( res => res.json())
+                .then( el => {
+                    if (el.message){
+                        alert(el.message);
+                    }
+                    else{
+                        document.getElementById('loginUsername').value = "";
+                        document.getElementById('loginPassword').value = "";
+
+                        if (el.jwt != null) {
+                            document.cookie = `token=${el.jwt};SameSite=Lax`;
+                            configureThePage();
+                        }
+                    }
+                })
+        })
+    }
+
+    //This function will be called when the page is loaded so it shows the
+    //main screen first
+    function configureThePage(){
+        document.getElementById("allPostsScreen").style.display = "block";
+        document.getElementById("loginScreen").style.display = "none";
+        document.getElementById("addPostScreen").style.display = "none";
+        document.getElementById("detailedPostScreen").style.display = "none";
+
+        const cookies = document.cookie.split("=");
+        const token = cookies[cookies.length -1];
+
+        fetch('/api/blogs', {
+            method: 'GET',
+            headers: {'Authorization': `Bearer ${token}`}
+        }).then(response => {
+            return response.json();
+        }).then(objs => {
+            for (const blog of objs){
+                addBlog(blog);
+            }
+        })
+    }
+
+    //When New Post button is clicked on the main screen we will hide the main screen
+    //and show the one for adding a new blog
+    document.getElementById("newPostButton").addEventListener("click", function(e) {
+        document.getElementById("allPostsScreen").style.display = "none";
+        document.getElementById("addPostScreen").style.display = "block";
+    })
+
+    function addComment(comment){
+        const newComment = {
+            div: document.createElement('div'),
+            author: document.createElement('h5'),
+            comment: document.createElement('h6')
+        }
+
+        const cookies = document.cookie.split("=");
+        const token = cookies[cookies.length -1];
+
+        fetch('/api/users/' + comment.userId, {
+            method: 'GET',
+            headers: {'Authorization': `Bearer ${token}`}
+        }).then(response => {
+            return response.json();
+        }).then(obj => {
+            newComment.author.innerText = obj.username;
+        })
+
+        newComment.comment.innerText = comment.content;
+
+        newComment.div.appendChild(document.createElement("hr"));
+        newComment.div.appendChild(newComment.author);
+        newComment.div.appendChild(newComment.comment);
+
+        document.getElementById("detailedPostComments").appendChild(newComment.div);
+    }
+
+    function addBlog(blog){
+        const newBlog = {
+            card: document.createElement('div'),
+            cardBody: document.createElement('div'),
+            cardTitle: document.createElement('h5'),
+            cardText: document.createElement('p')
+        }
+
+        newBlog.card.classList.add('card');
+        newBlog.card.style.width = '18 rem';
+        newBlog.cardBody.classList.add('card-body');
+        newBlog.cardTitle.classList.add('card-title');
+        newBlog.cardText.classList.add('card-text');
+        newBlog.cardText.classList.add('truncate');
+
+        newBlog.cardTitle.innerText = blog.title;
+        newBlog.cardText.innerText = blog.content;
+
+        newBlog.cardBody.appendChild(newBlog.cardTitle);
+        newBlog.cardBody.appendChild(newBlog.cardText);
+        newBlog.card.appendChild(newBlog.cardBody);
+
+        //Define what happens when a blog is clicked
+        //A detailed page for the blog will be opened
+        newBlog.card.addEventListener("click", function(e) {
+
+            const data = {
+                title: document.getElementById("detailedPostTitle"),
+                date: document.getElementById("detailedPostDate"),
+                author: document.getElementById("detailedPostAuthor"),
+                content: document.getElementById("detailedPostText")
+            }
+
+            data.title.innerText = blog.title;
+            data.date.innerText = blog.date;
+            data.content.innerText = blog.content;
+
+            const cookies = document.cookie.split("=");
+            const token = cookies[cookies.length -1];
+
+            fetch('/api/users/' + blog.userId, {
+                method: 'GET',
+                headers: {'Authorization': `Bearer ${token}`}
+            }).then(response => {
+                return response.json();
+            }).then(obj => {
+                data.author.innerText = obj.username;
+            })
+
+            selectedBlogId = blog.id;
+
+            //Empty the list of comments because there might be comments left from the old blog
+            document.getElementById("detailedPostComments").innerHTML = "";
+
+            //Fill the list of comments if there are any comments for the selected blog post
+            fetch('/api/comments/' + selectedBlogId, {
+                method: 'GET',
+                headers: {'Authorization': `Bearer ${token}`}
+            }).then(response => {
+                return response.json();
+            }).then(obj => {
+                for (const comment of obj){
+                    addComment(comment);
+                }
+            })
+
+            //Display the detailed post screen
+            document.getElementById("allPostsScreen").style.display = "none";
+            document.getElementById("detailedPostScreen").style.display = "block";
+        })
+
+        document.getElementById("blogs").appendChild(newBlog.card);
+    }
+
+    //Setup a action listener on Comment button based on the blog that is selected,
+    //this way we know to which blog we're adding a comment to
+    document.getElementById("addCommentToPost").addEventListener("submit", function(e){
+        e.preventDefault();
+
+        const data = {
+            comment: document.getElementById("comment")
+        }
+
+        const cookies = document.cookie.split("=");
+        const token = cookies[cookies.length -1];
+
+        fetch('/api/users/curr', {
+            method: 'GET',
+            headers: {'Authorization': `Bearer ${token}`}
+        }).then(response => {
+            return response.json();
+        }).then(usr => {
+
+            fetch('/api/comments', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    content: data.comment.value,
+                    blogId: selectedBlogId,
+                    userId: usr.id
+                })
+            }).then(response => {
+                return response.json()
+            }).then(obj => {
+                addComment(obj);
+
+                data.comment.value = "";
+            })
+        })
+
+
+    })
+
+    //A listener for adding a new post button
+    document.getElementById("addPostForm").addEventListener("submit", function(e){
+        e.preventDefault();
+
+        //We take the data from the inputs first
+        const data = {
+            title: document.getElementById("title"),
+            content: document.getElementById("content")
+        }
+
+        const cookies = document.cookie.split("=");
+        const token = cookies[cookies.length -1];
+
+        fetch('/api/blogs', {
+            method: 'POST',
+            headers: {
+                'Content-Type': "application/json",
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                title: data.title.value,
+                content: data.content.value
+            })
+        }).then(response => {
+            return response.json()
+        }).then(obj => {
+            addBlog(obj)
+            data.title.value = "";
+            data.content.value = "";
+
+            //When the Save Post  button is clicked on the add a new blog screen, we will
+            //send a post request and the go back to the main screen
+            document.getElementById("addPostScreen").style.display = "none";
+            document.getElementById("allPostsScreen").style.display = "block";
+        })
+    })
+
+    //If you're on the page for viewing the detailed blog, there is a button to return
+    //you back to all the blogs since this is a one page website
+    document.getElementById("backToAllPostsButton").addEventListener("click", function(e) {
+        document.getElementById("detailedPostScreen").style.display = "none";
+        document.getElementById("allPostsScreen").style.display = "block";
+    })
+
+</script>
+
+</body>
+</html>
+
